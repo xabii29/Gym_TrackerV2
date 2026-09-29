@@ -9,6 +9,7 @@ y cada escritura solo invalida las que realmente cambian (no todo):
   historia  última vez, recientes                      (10 min) cambia al terminar una sesión
   general   gráficas, récords, calendario, historial   (60 s)   cambia al terminar/editar sesiones
 """
+import re
 import time
 
 import pandas as pd
@@ -18,9 +19,26 @@ CACHES = ("catalogo", "sesion", "vivo", "historia", "general")
 LOG: list[tuple[str, float, str]] = []   # (tipo, ms, sql) de las últimas llamadas reales a la BD
 
 
+def _parametros_conexion() -> dict:
+    """Fija el driver psycopg2 pase lo que pase con el prefijo de la URL.
+
+    SQLAlchemy 2.1 cambió el driver por defecto de `postgresql://` a psycopg (v3); Streamlit Cloud instala
+    siempre la última versión, así que sin esto falla con "No module named 'psycopg'".
+    """
+    try:
+        conf = st.secrets["connections"]["postgresql"]
+    except Exception:  # noqa: BLE001
+        return {}
+    if "url" in conf:
+        return {"url": re.sub(r"^(postgres|postgresql)(\+\w+)?://", "postgresql+psycopg2://", str(conf["url"]))}
+    if conf.get("dialect") == "postgresql" and "driver" not in conf:   # formato host/usuario/contraseña
+        return {"driver": "psycopg2"}
+    return {}
+
+
 def conexion():
     # pool_recycle: descarta conexiones inactivas antes de que el servidor las cierre
-    return st.connection("postgresql", type="sql", pool_recycle=280)
+    return st.connection("postgresql", type="sql", pool_recycle=280, **_parametros_conexion())
 
 
 def _registrar(tipo: str, t0: float, sql: str):
