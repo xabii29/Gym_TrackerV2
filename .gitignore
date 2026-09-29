@@ -1,0 +1,16 @@
+# --- Secretos: NUNCA versionar ---
+.streamlit/secrets.toml
+.streamlit/password_db.txt
+.secrets/
+.env
+
+# --- Catálogo de terceros (© Gym visual): revisa su licencia antes de publicarlo ---
+data/
+sql/02_instrucciones_*.sql
+
+# --- Python / editor ---
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.vscode/
