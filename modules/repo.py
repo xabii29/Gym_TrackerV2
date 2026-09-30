@@ -17,7 +17,16 @@ def catalogo() -> pd.DataFrame:
 
 def instrucciones(ejercicio_id: str) -> str | None:
     df = leer("SELECT instrucciones_es FROM ejercicios WHERE id = :i", {"i": ejercicio_id}, cache="catalogo")
-    return None if df.empty or df.iloc[0, 0] is None or df.iloc[0, 0] != df.iloc[0, 0] else df.iloc[0, 0]
+    if df.empty:
+        return None
+    valor = df.iloc[0, 0]
+    if valor is None or valor != valor:
+        return None
+    if isinstance(valor, bytes):
+        return valor.decode("utf-8")
+    if not isinstance(valor, str):
+        return None
+    return valor
 
 
 def recientes(n: int = 15) -> pd.DataFrame:
