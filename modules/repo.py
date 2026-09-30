@@ -114,9 +114,13 @@ def guardar_ejercicio(sesion_id: int, ejercicio_id: str, filas: list[dict],
     nota = (nota or "").strip() or None
 
     def _f(s):
-        s.execute(text("""SELECT guardar_ejercicio_sesion(:s, :e, CAST(:reps AS int[]), CAST(:pesos AS numeric[]),
-                                                          CAST(:cals AS boolean[]), CAST(:rpe AS numeric),
-                                                          CAST(:nota AS text))"""),
+        s.execute(text("""SELECT guardar_ejercicio_sesion(:s, 
+                                                            CAST(:e AS text)
+                                                            CAST(:reps AS int[]), 
+                                                            CAST(:pesos AS numeric[]),
+                                                            CAST(:cals AS boolean[]), 
+                                                            CAST(:rpe AS numeric),
+                                                            CAST(:nota AS text))"""),
                   {"s": sesion_id, "e": ejercicio_id, "rpe": rpe, "nota": nota,
                    "reps": [int(f["reps"]) for f in filas],
                    "pesos": [float(f["peso"]) for f in filas],
