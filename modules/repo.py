@@ -115,7 +115,7 @@ def guardar_ejercicio(sesion_id: int, ejercicio_id: str, filas: list[dict],
 
     def _f(s):
         s.execute(text("""SELECT guardar_ejercicio_sesion(:s, 
-                                                            CAST(:e AS text)
+                                                            CAST(:e AS text),
                                                             CAST(:reps AS int[]), 
                                                             CAST(:pesos AS numeric[]),
                                                             CAST(:cals AS boolean[]), 
