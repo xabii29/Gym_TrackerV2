@@ -84,9 +84,21 @@ _FUNCIONES = {"catalogo": _q_catalogo, "sesion": _q_sesion, "vivo": _q_vivo,
 
 def _error_amigable(e: Exception) -> str:
     txt = str(e)
-    if "does not exist" in txt and ("relation" in txt or "table" in txt or "function" in txt):
+    bajo = txt.lower()
+    if "does not exist" in bajo and ("relation" in bajo or "table" in bajo or "function" in bajo):
         return ("La base de datos aún no tiene el esquema v2. Ejecuta "
                 "`python scripts/instalar_bd.py` (o los archivos de la carpeta `sql/` en orden).")
+    if "could not translate host name" in bajo or "no address associated" in bajo or "network is unreachable" in bajo:
+        return ("No se encuentra el servidor de la base de datos. En Supabase, la conexión directa "
+                "(`db.xxxx.supabase.co`) solo funciona con IPv6 y Streamlit Cloud no la alcanza. "
+                "Usa la cadena del **pooler** (`...pooler.supabase.com`): Supabase → Connect → "
+                "Transaction pooler, y pégala en los Secrets de Streamlit. "
+                f"\n\nDetalle técnico: {txt[:300]}")
+    if "tenant or user not found" in bajo:
+        return ("El pooler de Supabase no reconoce el usuario. Con el pooler el usuario es "
+                "`postgres.<ID-DEL-PROYECTO>` (no solo `postgres`).")
+    if "password authentication failed" in bajo:
+        return "Contraseña de la base incorrecta. Revísala en los Secrets (los símbolos especiales van codificados: @ → %40)."
     return f"No se pudo consultar la base de datos: {e}"
 
 

@@ -1,5 +1,6 @@
 """Prueba de integración: app real + PostgreSQL temporal. Ejecutar:  python tests/test_app.py"""
 import sys
+from datetime import date
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -11,7 +12,7 @@ import bd_temporal  # noqa: E402
 
 srv, URI, CON = bd_temporal.iniciar()
 CUR = CON.cursor()
-SECRETS = {"connections": {"postgresql": {"dialect": "postgresql", "url": URI.replace("postgresql://", "postgresql+psycopg2://")}},
+SECRETS = {"connections": {"postgresql": {"dialect": "postgresql", "url": URI}},
            "auth": {"password": "clave-de-prueba"}}
 resultados = []
 
@@ -132,10 +133,10 @@ CUR.execute("select notas from sesiones where id=%s", (sid2,))
 check("nota de sesión con texto se guarda", (CUR.fetchone() or [None])[0] == "Dormí poco, hombro molesto")
 
 # ------------------------------------------------- 3. todas las pantallas
-for mod in ["resumen", "progreso", "records", "calendario", "historial", "calorias"]:
+for mod in ["resumen", "progreso", "records", "calendario", "historial", "nutricion"]:
     a = vista(mod, editor=False).run()
     check(f"pantalla {mod} (lectura) sin excepciones", limpio(a), str((a.exception, [e.value[:160] for e in a.error]))[:300])
-for mod in ["historial", "plantillas", "catalogo", "calorias"]:
+for mod in ["historial", "plantillas", "catalogo", "nutricion"]:
     a = vista(mod, editor=True).run()
     check(f"pantalla {mod} (editor) sin excepciones", limpio(a), str((a.exception, [e.value[:160] for e in a.error]))[:300])
 a = vista("plantillas", editor=False).run()
@@ -174,6 +175,68 @@ esperado = [antes[1], antes[0]] + antes[3:]
 check("reordenar y quitar se guarda en la BD", despues == esperado, f"{len(antes)}->{len(despues)}")
 a = vista("catalogo", editor=True).run()
 check("pantalla catálogo sin excepciones", limpio(a), str((a.exception, [e.value[:160] for e in a.error]))[:300])
+
+# ------------------------------------------- 6. nutrición: fases, recordatorio y traslapes
+from datetime import timedelta  # noqa: E402
+
+def fase(a, tipo, inicio, kcal, p, c, g, sem=0, pasada=False, fin=None, nota=""):
+    a.selectbox(key="nf_tipo").set_value(tipo)
+    a.date_input(key="nf_inicio").set_value(inicio)
+    a.number_input(key="nf_kcal").set_value(kcal); a.number_input(key="nf_semanas").set_value(sem)
+    a.number_input(key="nf_p").set_value(p); a.number_input(key="nf_c").set_value(c); a.number_input(key="nf_g").set_value(g)
+    a.text_input(key="nf_nota").set_value(nota)
+    a.checkbox(key="nf_pasada").set_value(pasada)
+    if fin: a.date_input(key="nf_fin").set_value(fin)
+    return [b for b in a.button if "Guardar plan" in b.label][0].click().run()
+
+a = vista("nutricion", editor=False).run()
+check("nutrición sin datos (lectura) muestra aviso y no falla", limpio(a) and any("ningún plan" in i.value for i in a.info))
+a = vista("nutricion", editor=True).run()
+a = fase(a, "bulk", date(2026, 1, 1), 3000, 170, 380, 80, 8, pasada=True, fin=date(2026, 3, 1))
+CUR.execute("select tipo, fin from fases_nutricion"); filas_f = CUR.fetchall()
+check("fase pasada guardada con su fecha de fin", filas_f == [("bulk", date(2026, 3, 1))], str(filas_f))
+hace4 = hoy() - timedelta(days=28)
+a = vista("nutricion", editor=True).run()
+a = fase(a, "recomp", hace4, 2450, 180, 250, 70, 12, nota="ajustado por prueba y error")
+CUR.execute("select tipo, kcal, proteina_g, grasas_g, semanas_planeadas, fin is null from fases_nutricion where tipo='recomp'")
+check("plan vigente guardado con tus números (2450 kcal, 180 P)", CUR.fetchone() == ("recomp", 2450, 180, 70, 12, True))
+a = vista("nutricion", editor=False).run()
+check("el recordatorio dice que faltan 8 semanas", limpio(a) and any("Faltan **8 semana(s)**" in m.value for m in a.markdown), str([m.value[:60] for m in a.markdown][:6]))
+check("aparece la barra de progreso y el plan", any("Recomposición" in s.value for s in a.subheader))
+
+# traslape: una fase pasada que pisa la vigente debe rechazarse con mensaje claro
+a = vista("nutricion", editor=True).run()
+a = fase(a, "cut", hace4 - timedelta(days=10), 2200, 180, 200, 60, pasada=True, fin=hace4 + timedelta(days=5))
+CUR.execute("select count(*) from fases_nutricion"); n_antes = CUR.fetchone()[0]
+check("una fase que se traslapa se rechaza con mensaje claro", any("se cruzan" in e.value for e in a.error) and n_antes == 2, f"filas={n_antes}")
+
+# cambiar de fase: el plan vigente se cierra el día en que empieza el nuevo
+a = vista("nutricion", editor=True).run()
+a = fase(a, "cut", hoy(), 2200, 180, 200, 60, 8)
+CUR.execute("select tipo, inicio, fin from fases_nutricion order by inicio")
+f3 = CUR.fetchall()
+check("al cambiar de fase, la anterior se cierra ese día", f3[1] == ("recomp", hace4, hoy()) and f3[2] == ("cut", hoy(), None), str(f3))
+CUR.execute("select count(*) from fases_nutricion where fin is null"); 
+check("queda un solo plan vigente", CUR.fetchone()[0] == 1)
+a = vista("nutricion", editor=False).run()
+check("historial y peso sin errores tras 3 fases", limpio(a) and any("Historial" in s.value for s in a.subheader), str([e.value[:100] for e in a.error]))
+
+# corregir un número del plan vigente sin crear otro
+a = vista("nutricion", editor=True).run()
+CUR.execute("select id from fases_nutricion where fin is null"); fid = CUR.fetchone()[0]
+a.number_input(key=f"ed{fid}_kcal").set_value(2250)
+[b for b in a.button if "Guardar corrección" in b.label][0].click().run()
+CUR.execute("select kcal, count(*) over () from fases_nutricion where id=%s", (fid,))
+check("corregir el plan vigente cambia el número sin duplicar", CUR.fetchone()[0] == 2250)
+CUR.execute("select count(*) from fases_nutricion"); check("sigue habiendo 3 fases", CUR.fetchone()[0] == 3)
+
+# peso corporal con bandas de fase
+a = vista("nutricion", editor=True).run()
+a.number_input(key="pc_kg").set_value(73.4)
+a.button(key="pc_guardar").click().run()
+CUR.execute("select peso_kg from peso_corporal"); check("peso corporal guardado", float(CUR.fetchone()[0]) == 73.4)
+a = vista("nutricion", editor=False).run()
+check("gráfica de peso con bandas de fase sin errores", limpio(a), str([e.value[:100] for e in a.error]))
 
 print(f"\n{sum(resultados)}/{len(resultados)} comprobaciones correctas")
 sys.exit(0 if all(resultados) else 1)

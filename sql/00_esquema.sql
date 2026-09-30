@@ -107,6 +107,24 @@ CREATE TABLE IF NOT EXISTS peso_corporal (
     fecha   DATE PRIMARY KEY,
     peso_kg NUMERIC(5,2) NOT NULL CHECK (peso_kg > 0)
 );
+-- Fases de nutrición: las calorías y macros los decides tú; aquí solo se registran por periodo.
+-- Cada fila es un plan. fin NULL = plan vigente. EXCLUDE impide que dos periodos se traslapen
+-- (y, por lo tanto, que haya dos planes vigentes a la vez).
+CREATE TABLE IF NOT EXISTS fases_nutricion (
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tipo              TEXT NOT NULL CHECK (tipo IN ('bulk', 'recomp', 'cut', 'mantenimiento')),
+    inicio            DATE NOT NULL,
+    fin               DATE NULL,
+    semanas_planeadas SMALLINT NULL CHECK (semanas_planeadas > 0),
+    kcal              INT NOT NULL CHECK (kcal BETWEEN 800 AND 8000),
+    proteina_g        SMALLINT NOT NULL CHECK (proteina_g >= 0),
+    carbos_g          SMALLINT NOT NULL CHECK (carbos_g >= 0),
+    grasas_g          SMALLINT NOT NULL CHECK (grasas_g >= 0),
+    nota              TEXT NULL,
+    CHECK (fin IS NULL OR fin > inicio),
+    EXCLUDE USING gist (daterange(inicio, fin, '[)') WITH &&)
+);
+
 CREATE TABLE IF NOT EXISTS _migraciones (
     nombre      TEXT PRIMARY KEY,
     aplicado_en TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -156,7 +174,9 @@ GROUP BY s.id;
 CREATE OR REPLACE FUNCTION guardar_ejercicio_sesion(
     p_sesion BIGINT, p_ejercicio TEXT, p_reps INT[], p_pesos NUMERIC[], p_cals BOOLEAN[],
     p_rpe NUMERIC, p_nota TEXT
-) RETURNS VOID LANGUAGE plpgsql AS $fn$
+) RETURNS VOID LANGUAGE plpgsql
+SET search_path = public, pg_temp   -- evita el aviso "Function Search Path Mutable" de Supabase
+AS $fn$
 DECLARE v_orden SMALLINT;
 BEGIN
     SELECT orden INTO v_orden FROM series WHERE sesion_id = p_sesion AND ejercicio_id = p_ejercicio LIMIT 1;
@@ -177,7 +197,7 @@ DO $$
 DECLARE t TEXT;
 BEGIN
     FOREACH t IN ARRAY ARRAY['ejercicios','ejercicios_alias','sesiones','series','plantillas',
-                             'plantilla_ejercicios','ajustes','peso_corporal','_migraciones']
+                             'plantilla_ejercicios','ajustes','peso_corporal','fases_nutricion','_migraciones']
     LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     END LOOP;

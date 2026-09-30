@@ -17,16 +17,7 @@ def catalogo() -> pd.DataFrame:
 
 def instrucciones(ejercicio_id: str) -> str | None:
     df = leer("SELECT instrucciones_es FROM ejercicios WHERE id = :i", {"i": ejercicio_id}, cache="catalogo")
-    if df.empty:
-        return None
-    valor = df.iloc[0, 0]
-    if valor is None or valor != valor:
-        return None
-    if isinstance(valor, bytes):
-        return valor.decode("utf-8")
-    if not isinstance(valor, str):
-        return None
-    return valor
+    return None if df.empty or df.iloc[0, 0] is None or df.iloc[0, 0] != df.iloc[0, 0] else df.iloc[0, 0]
 
 
 def recientes(n: int = 15) -> pd.DataFrame:
@@ -123,13 +114,9 @@ def guardar_ejercicio(sesion_id: int, ejercicio_id: str, filas: list[dict],
     nota = (nota or "").strip() or None
 
     def _f(s):
-        s.execute(text("""SELECT guardar_ejercicio_sesion(CAST(:s AS bigint), 
-                                                            CAST(:e AS text),
-                                                            CAST(:reps AS int[]), 
-                                                            CAST(:pesos AS numeric[]),
-                                                            CAST(:cals AS boolean[]), 
-                                                            CAST(:rpe AS numeric),
-                                                            CAST(:nota AS text))"""),
+        s.execute(text("""SELECT guardar_ejercicio_sesion(:s, :e, CAST(:reps AS int[]), CAST(:pesos AS numeric[]),
+                                                          CAST(:cals AS boolean[]), CAST(:rpe AS numeric),
+                                                          CAST(:nota AS text))"""),
                   {"s": sesion_id, "e": ejercicio_id, "rpe": rpe, "nota": nota,
                    "reps": [int(f["reps"]) for f in filas],
                    "pesos": [float(f["peso"]) for f in filas],
@@ -230,3 +217,42 @@ def guardar_peso(fecha: date, kg: float):
     escribir(lambda s: s.execute(text("""INSERT INTO peso_corporal (fecha, peso_kg) VALUES (:f, :k)
                                          ON CONFLICT (fecha) DO UPDATE SET peso_kg = EXCLUDED.peso_kg"""),
                                  {"f": fecha, "k": kg}), limpiar=("general",))
+
+
+# ------------------------------------------------------- fases de nutrición
+def fases() -> pd.DataFrame:
+    return leer("""SELECT id, tipo, inicio, fin, semanas_planeadas, kcal, proteina_g, carbos_g, grasas_g, nota
+                   FROM fases_nutricion ORDER BY inicio DESC""")
+
+
+def nueva_fase(tipo: str, inicio: date, semanas: int | None, kcal: int, p: int, c: int, g: int,
+               nota: str | None, fin: date | None = None):
+    """Crea un plan. Si es el vigente (fin=None) cierra el anterior el mismo día en que empieza este.
+    Si es una fase pasada (con fin) no toca el plan vigente. La base rechaza traslapes."""
+    def _f(s):
+        if fin is None:
+            s.execute(text("UPDATE fases_nutricion SET fin = :i WHERE fin IS NULL AND inicio < :i"), {"i": inicio})
+        s.execute(text("""INSERT INTO fases_nutricion
+                          (tipo, inicio, fin, semanas_planeadas, kcal, proteina_g, carbos_g, grasas_g, nota)
+                          VALUES (:t, :i, :f, :s, :k, :p, :c, :g, NULLIF(trim(:n), ''))"""),
+                  {"t": tipo, "i": inicio, "f": fin, "s": semanas, "k": kcal, "p": p, "c": c, "g": g, "n": nota or ""})
+    escribir(_f, limpiar=("general",))
+
+
+def corregir_fase(id_: int, tipo: str, inicio: date, semanas: int | None, kcal: int, p: int, c: int, g: int,
+                  nota: str | None):
+    escribir(lambda s: s.execute(text("""UPDATE fases_nutricion SET tipo = :t, inicio = :i, semanas_planeadas = :s,
+                                         kcal = :k, proteina_g = :p, carbos_g = :c, grasas_g = :g,
+                                         nota = NULLIF(trim(:n), '') WHERE id = :id"""),
+                                 {"t": tipo, "i": inicio, "s": semanas, "k": kcal, "p": p, "c": c, "g": g,
+                                  "n": nota or "", "id": id_}), limpiar=("general",))
+
+
+def cerrar_fase(id_: int, fin: date):
+    escribir(lambda s: s.execute(text("UPDATE fases_nutricion SET fin = :f WHERE id = :i"), {"f": fin, "i": id_}),
+             limpiar=("general",))
+
+
+def eliminar_fase(id_: int):
+    escribir(lambda s: s.execute(text("DELETE FROM fases_nutricion WHERE id = :i"), {"i": id_}),
+             limpiar=("general",))

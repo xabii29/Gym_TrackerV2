@@ -16,7 +16,7 @@ Pensada para uso real (incluso para transmitirla en vivo): rápida, con guardado
 | Guardado **ejercicio por ejercicio**: si se cierra el navegador, la sesión se retoma | **Récords personales** y su historial |
 | Series de calentamiento, RPE y notas opcionales (`NULL` si van vacías) | **Calendario** interactivo: toca un día y ve su sesión |
 | Temporizador de descanso con sonido y vibración | **Historial** editable + respaldo en CSV |
-| Catálogo de 1 300+ ejercicios en español con instrucciones | Peso corporal y calculadora de calorías/macros |
+| Catálogo de 1 300+ ejercicios en español con instrucciones | **Nutrición por fases** (bulk/recomp/cut): tus kcal y macros, recordatorio de semanas y línea de tiempo, junto al peso corporal |
 
 **Acceso:** cualquiera puede *ver*; **registrar y editar exige contraseña** (modo lectura / modo edición).
 
@@ -28,6 +28,7 @@ Streamlit (views/)  →  modules/repo.py (todo el SQL)  →  modules/db.py (cach
 
 ```mermaid
 erDiagram
+    FASES_NUTRICION }o--o| PESO_CORPORAL : "se superponen en la gráfica"
     SESIONES ||--o{ SERIES : contiene
     EJERCICIOS ||--o{ SERIES : "se registra en"
     PLANTILLAS ||--o{ PLANTILLA_EJERCICIOS : ordena
@@ -40,6 +41,7 @@ Vistas SQL (`v_series_detalle`, `v_prs`, `v_pr_historial`, `v_sesiones_resumen`)
 ### Decisiones de diseño
 - **Menos viajes a la base = app más rápida.** Cada consulta es un viaje de red. Se midió el flujo de registrar un ejercicio: de ~50 viajes a **10**
   con cinco cachés independientes (invalidadas selectivamente por cada escritura) y una función SQL (`guardar_ejercicio_sesion`) que guarda en un solo viaje.
+- **Fases de nutrición sin traslapes:** una restricción `EXCLUDE` con rangos de fechas impide que dos fases se crucen o que haya dos planes vigentes.
 - **Identidad por `id`, no por nombre:** renombrar un ejercicio no rompe su historial.
 - **Fechas en hora local** (columna `DATE`), no en UTC: un entrenamiento a las 8 pm no cae en el día siguiente.
 - **Integridad en la base:** `CHECK` (peso ≥ 0, RPE 1–10), una sola sesión abierta a la vez (índice único parcial), claves foráneas.
@@ -58,7 +60,7 @@ streamlit run app.py
 
 - `instalar_bd.py` es **idempotente** (se puede repetir para actualizar). Alternativa sin Python: pega los archivos de `sql/` en el SQL Editor de Supabase, en orden.
 - **Streamlit Cloud:** apunta a `app.py` y pega el contenido de `secrets.toml` en *Settings → Secrets*.
-- Usa la cadena del *pooler* de Supabase (IPv4). Con `?debug=1` en la URL aparece un panel con la latencia de cada llamada a la base.
+- **Streamlit Cloud necesita la cadena del *pooler* de Supabase** (Connect → Transaction pooler, host `...pooler.supabase.com`, usuario `postgres.<ID-del-proyecto>`, puerto 6543): la conexión directa `db.xxxx.supabase.co` es solo IPv6 y falla con «No address associated with hostname». La app fija el driver `psycopg2` sola: sirve cualquier prefijo (`postgresql://`, `postgres://`, `postgresql+psycopg2://`). Con `?debug=1` en la URL aparece un panel con la latencia de cada llamada a la base.
 
 ## 🧪 Pruebas
 

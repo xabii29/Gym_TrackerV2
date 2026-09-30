@@ -9,7 +9,7 @@ from modules.temas import render_selector_tema
 st.set_page_config(page_title=APP_NOMBRE, page_icon="🏋️", layout="centered",
                    initial_sidebar_state="collapsed")
 
-from views import calendario, calorias, catalogo, entrenar, historial, plantillas, progreso, records, resumen  # noqa: E402
+from views import calendario, catalogo, entrenar, historial, nutricion, plantillas, progreso, records, resumen  # noqa: E402
 
 paginas = [
     st.Page(entrenar.render, title="Entrenar", icon="🏋️", url_path="entrenar", default=True),
@@ -20,7 +20,7 @@ paginas = [
     st.Page(historial.render, title="Historial", icon="📚", url_path="historial"),
     st.Page(plantillas.render, title="Plantillas", icon="📋", url_path="plantillas"),
     st.Page(catalogo.render, title="Catálogo", icon="📖", url_path="catalogo"),
-    st.Page(calorias.render, title="Calorías y peso", icon="🔥", url_path="calorias"),
+    st.Page(nutricion.render, title="Nutrición", icon="🍽️", url_path="nutricion"),
 ]
 nav = st.navigation(paginas)
 st.sidebar.title(APP_NOMBRE)
